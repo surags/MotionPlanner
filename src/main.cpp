@@ -148,8 +148,10 @@ int main() {
                 }
 
                 double left_dist = 1000000.0;
+                double left_back_dist = 1000000.0;
                 double left_speed = 0.0;
                 double right_dist = 1000000.0;
+                double right_back_dist = 1000000.0;
                 double right_speed = 0.0;
                 BRAKE_RATE brake_rate = BRAKE_RATE::NO_BRAKE;
 
@@ -232,6 +234,11 @@ int main() {
                                 left_speed = check_speed;
                             }
 
+                            if(check_car_s < car_s && -dist < left_back_dist) {
+                                left_back_dist = -dist;
+                                // left_speed = check_speed;
+                            }
+
                             // If the check_car is within 35 meters in front, disqualify lane
                             if (check_car_s > car_s && (check_car_s - car_s) < 30) {
                                 //ref_vel = 29.5;
@@ -254,6 +261,10 @@ int main() {
                             if(check_car_s > car_s && dist < right_dist) {
                                 right_dist = dist;
                                 right_speed = check_speed;
+                            }
+
+                            if(check_car_s < car_s && -dist < right_back_dist) {
+                                right_back_dist = -dist;
                             }
                             
                             // If the check_car is within 30 meters in front, disqualify lane
@@ -331,7 +342,7 @@ int main() {
                         // Can only move right
                         if(!too_close) {
                             // Return to ideal lane only if theres no car in 60m
-                            if(right_dist > 100 && !too_close_right) {
+                            if(right_dist > 100 && right_back_dist > 10 && !too_close_right) {
                                 target_lane = lane + 1;
                                 goStraight = false;
                                 state = LANE_STATE::TRANSITION_LANE;
@@ -384,7 +395,7 @@ int main() {
                         // Can only go left
                         if(!too_close) {
                             // Return to ideal lane only if theres no car in 60m
-                            if(left_dist > 100 && !too_close_left) {
+                            if(left_dist > 100 && left_back_dist > 10  && !too_close_left) {
                                 target_lane = lane - 1;
                                 goStraight = false;
                                 state = LANE_STATE::TRANSITION_LANE;
@@ -478,8 +489,8 @@ int main() {
                         }
                         // ref_vel -= .112;
                     } else if (ref_vel < 49.5) {
-                        // ref_vel += .224;
-                        ref_vel += .336;
+                        ref_vel += .224;
+                        // ref_vel += .336;
                         // ref_vel += .448;
                     }
 
