@@ -24,7 +24,8 @@ enum BRAKE_RATE {
     NO_BRAKE,
     LIGHT_BRAKE,
     MEDIUM_BRAKE,
-    HARD_BRAKE
+    HARD_BRAKE,
+    VERY_HARD_BRAKE
 };
 
 int main() {
@@ -40,6 +41,7 @@ int main() {
     // Start in lane 1, which is the center lane (0 is left and 2 is right)
     int lane = 1;
     int target_lane = 1;
+    bool ideal_lane = true;
     
     LANE_STATE state = LANE_STATE::STAY_LANE;
 
@@ -81,7 +83,8 @@ int main() {
                     &ref_vel, 
                     &lane, 
                     &target_lane,
-                    &state]
+                    &state,
+                    &ideal_lane]
                   (uWS::WebSocket<uWS::SERVER> ws, 
                     char *data, 
                     size_t length,
@@ -171,11 +174,18 @@ int main() {
                             // Car is in my partial-lane
                             // Calculate the check_car's future location
                             check_car_s += (double)prev_size * 0.02 * check_speed;
-        
+                            double dist = check_car_s - car_s;
                             // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
                             if (check_car_s > car_s && (check_car_s - car_s) < 15) {
                                 too_close = true;
                                 brake_rate = BRAKE_RATE::MEDIUM_BRAKE;
+
+                                if(dist < 10) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::HARD_BRAKE);
+                                }
+                                if(dist < 5) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::VERY_HARD_BRAKE);
+                                }
                             }
                         }
 
@@ -192,14 +202,23 @@ int main() {
                             // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
                             if (check_car_s > car_s && dist < 30) {
                                 too_close = true;
-                                brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
+
+                                // brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
                                 
                                 if(dist < 20) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
+                                }
+
+                                if(dist < 15) {
                                     brake_rate = std::max(brake_rate, BRAKE_RATE::MEDIUM_BRAKE);
                                 }
 
                                 if(dist < 10) {
                                     brake_rate = std::max(brake_rate, BRAKE_RATE::HARD_BRAKE);
+                                }
+
+                                if(dist < 5) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::VERY_HARD_BRAKE);
                                 }
                             } 
                         } else if ( d < (2 + 4 * lane - 2) && d > (2 + 4 * (lane - 1) - 2) ) {
@@ -214,13 +233,13 @@ int main() {
                             }
 
                             // If the check_car is within 35 meters in front, disqualify lane
-                            if (check_car_s > car_s && (check_car_s - car_s) < 35) {
+                            if (check_car_s > car_s && (check_car_s - car_s) < 30) {
                                 //ref_vel = 29.5;
                                 too_close_left = true;
                             }
 
                             // If the check car is within 10 metres at back, disqualify lane (blindspot check)
-                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
+                            if (check_car_s < car_s && (car_s - check_car_s) < 5) {
                                 //ref_vel = 29.5;
                                 too_close_left = true;
                             }
@@ -238,12 +257,12 @@ int main() {
                             }
                             
                             // If the check_car is within 30 meters in front, disqualify lane
-                            if (check_car_s > car_s && (check_car_s - car_s) < 35){
+                            if (check_car_s > car_s && (check_car_s - car_s) < 30){
                                 too_close_right = true;
                             }
 
                             // If the check car is within 10 metres at back, disqualify lane (blindspot check)
-                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
+                            if (check_car_s < car_s && (car_s - check_car_s) < 5) {
                                 too_close_right = true;
                             }
                         }
@@ -296,12 +315,17 @@ int main() {
                         // Car within +/- 1 d of center of lane. Lane change complete!
                         lane = target_lane;
                         state = LANE_STATE::STAY_LANE;
-                        std::cout << "State change: STAY LANE; Lane " << lane << std::endl; 
+                        std::cout << "State change: STAY LANE; Lane " << lane << std::endl;
+                        if(lane == 1) {
+                            ideal_lane = true;
+                        } else {
+                            ideal_lane = false;
+                        }
                     }
 
                 }
 
-                if(state == LANE_STATE::STAY_LANE && too_close) {
+                if(state == LANE_STATE::STAY_LANE && (too_close || !ideal_lane)) {
                     // Check lane switch possibility
                     if(lane == 0) {
                         // Can only move right
@@ -311,7 +335,8 @@ int main() {
                             goStraight = false;
                             state = LANE_STATE::TRANSITION_LANE;
                             std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
-                        } 
+                        }
+
                     } else if (lane == 1) {
                         bool check_done = false;
                         // Check both left and right
@@ -412,7 +437,7 @@ int main() {
 
                 // Fill up the rest of path planner after filling it with previous points, will always output 50 points
                 for (int i = 1; i <= 50-previous_path_x.size(); i++) {
-                    if (too_close) {
+                    if (brake_rate != BRAKE_RATE::NO_BRAKE) {
                         switch(brake_rate) {
                             case BRAKE_RATE::LIGHT_BRAKE:
                                 ref_vel -= .056;
@@ -423,6 +448,10 @@ int main() {
                             case BRAKE_RATE::HARD_BRAKE:
                                 ref_vel -= .224;
                                 break;
+                            case BRAKE_RATE::VERY_HARD_BRAKE:
+                                ref_vel -= .896;
+                                std::cout << "VERY HARD BREAK" << std::endl;
+                                break;
                             default:
                                 ref_vel -= .224;
                                 break;
@@ -430,6 +459,8 @@ int main() {
                         // ref_vel -= .112;
                     } else if (ref_vel < 49.5) {
                         ref_vel += .224;
+                        // ref_vel += .336;
+                        // ref_vel += .448;
                     }
 
                     double N = (target_dist/(0.02*ref_vel/2.24));
