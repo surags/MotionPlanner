@@ -20,6 +20,13 @@ enum LANE_STATE {
     TRANSITION_LANE
 };
 
+enum BRAKE_RATE {
+    NO_BRAKE,
+    LIGHT_BRAKE,
+    MEDIUM_BRAKE,
+    HARD_BRAKE
+};
+
 int main() {
     uWS::Hub h;
 
@@ -33,6 +40,7 @@ int main() {
     // Start in lane 1, which is the center lane (0 is left and 2 is right)
     int lane = 1;
     int target_lane = 1;
+    
     LANE_STATE state = LANE_STATE::STAY_LANE;
 
     // Start at zero velocity and gradually accelerate
@@ -128,14 +136,21 @@ int main() {
                 bool too_close = false; // True if too close to a car in front
                 bool too_close_left = false; // True if too close to a car on the left lane for lane switch
                 bool too_close_right = false; // // True if too close to a car on the right lane for lane switch
+                bool too_too_close = false;
             
                 if(lane == 0) {
                     too_close_left = true; // No left lane to switch to
-                } else if(lane == 1) { 
+                } else if(lane == 2) { 
                     too_close_right = true; // No right lane to switch to
                 }
 
-                // Find ref_v to use
+                double left_dist = 1000000.0;
+                double left_speed = 0.0;
+                double right_dist = 1000000.0;
+                double right_speed = 0.0;
+                BRAKE_RATE brake_rate = BRAKE_RATE::NO_BRAKE;
+
+                // Determine lane availability and ref_val
                 for (int i = 0; i < sensor_fusion.size(); i++) {
                     // Check if the car is in the same lane as the ego vehicle
                     float d = sensor_fusion[i][6];
@@ -150,40 +165,90 @@ int main() {
                     double check_speed = sqrt(vx*vx + vy*vy);
                     double check_car_s = sensor_fusion[i][5];
 
-                    // if(state == LANE_STATE::TRANSITION_LANE)
-
-                    if (d < (2+4*lane+2) && d > (2+4*lane-2)){
-                        // Car is in my lane
-                        // Calculate the check_car's future location
-                        check_car_s += (double)prev_size * 0.02 * check_speed;
-     
-                        // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
-                        if (check_car_s > car_s && (check_car_s - car_s) < 30) {
-                            //ref_vel = 29.5;
-                            too_close = true;
-                        } 
-                    } else if ( d < (2 + 4 * lane - 2) && d > (2 + 4 * (lane - 1) - 2) ) {
-                        // Car is in the left lane
-                        check_car_s += (double)prev_size * 0.02 * check_speed;
-                        // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
-                        if (check_car_s > car_s && (check_car_s - car_s) < 30) {
-                            //ref_vel = 29.5;
-                            too_close_left = true;
-                            // std::cout << "Too close left" << std::endl;
+                    if(state == LANE_STATE::TRANSITION_LANE) {
+                        // Car is in transition. Slow down for cars in front of me as opposed to cars in lane
+                        if (d < (car_d+1.5) && d > (car_d-1.5)) {
+                            // Car is in my partial-lane
+                            // Calculate the check_car's future location
+                            check_car_s += (double)prev_size * 0.02 * check_speed;
+        
+                            // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
+                            if (check_car_s > car_s && (check_car_s - car_s) < 15) {
+                                too_close = true;
+                                brake_rate = BRAKE_RATE::MEDIUM_BRAKE;
+                            }
                         }
 
-                    } else if ( d < (2 + 4 * (lane + 1) + 2) && d > (2+4*(lane) + 2) ) {
-                        // Car is in the right lane
-                        
-                        check_car_s += (double)prev_size * 0.02 * check_speed;
-                        
-                        // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
-                        if (check_car_s > car_s && (check_car_s - car_s) < 30){
-                            //ref_vel = 29.5;
-                            too_close_right = true;
-                            // std::cout << "Too close right" << std::endl;
+                        // This is done to ensure car does not change to a new lane this iteration
+                        too_close_left = true;
+                        too_close_right = true;
+                    } else {
+                        if (d < (2+4*lane+2) && d > (2+4*lane-2)){
+                            // Car is in my lane
+                            // Calculate the check_car's future location
+                            check_car_s += (double)prev_size * 0.02 * check_speed;
+
+                            double dist = check_car_s - car_s;
+                            // If the check_car is within 30 meters in front, reduce ref_vel so that we don't hit it
+                            if (check_car_s > car_s && dist < 30) {
+                                too_close = true;
+                                brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
+                                
+                                if(dist < 20) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::MEDIUM_BRAKE);
+                                }
+
+                                if(dist < 10) {
+                                    brake_rate = std::max(brake_rate, BRAKE_RATE::HARD_BRAKE);
+                                }
+                            } 
+                        } else if ( d < (2 + 4 * lane - 2) && d > (2 + 4 * (lane - 1) - 2) ) {
+                            // Car is in the left lane
+                            check_car_s += (double)prev_size * 0.02 * check_speed;
+                            double dist = check_car_s - car_s;
+
+                            // Find closest car in left lane
+                            if(check_car_s > car_s && dist < left_dist) {
+                                left_dist = dist;
+                                left_speed = check_speed;
+                            }
+
+                            // If the check_car is within 35 meters in front, disqualify lane
+                            if (check_car_s > car_s && (check_car_s - car_s) < 35) {
+                                //ref_vel = 29.5;
+                                too_close_left = true;
+                            }
+
+                            // If the check car is within 10 metres at back, disqualify lane (blindspot check)
+                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
+                                //ref_vel = 29.5;
+                                too_close_left = true;
+                            }
+
+                        } else if ( d < (2 + 4 * (lane + 1) + 2) && d > (2+4*(lane) + 2) ) {
+                            // Car is in the right lane
+                            check_car_s += (double)prev_size * 0.02 * check_speed;
+
+                            double dist = check_car_s - car_s;
+
+                            // Find closest car in right lane
+                            if(check_car_s > car_s && dist < right_dist) {
+                                right_dist = dist;
+                                right_speed = check_speed;
+                            }
+                            
+                            // If the check_car is within 30 meters in front, disqualify lane
+                            if (check_car_s > car_s && (check_car_s - car_s) < 35){
+                                too_close_right = true;
+                            }
+
+                            // If the check car is within 10 metres at back, disqualify lane (blindspot check)
+                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
+                                too_close_right = true;
+                            }
                         }
                     }
+
                 }
             
                 // Create a list of evenly spaced waypoints 30m apart
@@ -250,30 +315,38 @@ int main() {
                     } else if (lane == 1) {
                         bool check_done = false;
                         // Check both left and right
-                        if(!too_close_left) {
+                        if(!too_close_left && !too_close_right) {
+                            // Since both lanes are available chose the one with the furthest car
+                            if(left_dist > right_dist) {
+                                // Change to left lane
+                                target_lane = lane - 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                            } else {
+                                // Change to right lane
+                                target_lane = lane + 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;    
+                            }
+                        } else if(!too_close_left) {
                             // Change to left lane
-                            // Add evenly 30m spaced points ahead of the starting reference
                             target_lane = lane - 1;
                             goStraight = false;
                             state = LANE_STATE::TRANSITION_LANE;
-                            // std::cout << "Lane change right" << std::endl;
                             std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
-                            check_done = true;
-                            // std::cout << "Lane change left \n" << car_s << ":" << car_d << "\n" << car_s + 90 << ":" << std::min((double)2+4*lane - 4, car_d) << "\n" << next_wp2[0] << ":" << next_wp2[1] << std::endl;
-                        } 
-                        
-                        if (!check_done && !too_close_right) {
+
+                        } else if (!too_close_right) {
                             // Change to right lane
-                            // Add evenly 30m spaced points ahead of the starting reference
                             target_lane = lane + 1;
                             goStraight = false;
                             state = LANE_STATE::TRANSITION_LANE;
-                            // std::cout << "Lane change right" << std::endl;
                             std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
                         }
+                    
                     } else if (lane == 2) {
                         // Can only go left
-
                         if(!too_close_left) {
                             // Change to left lane
                             target_lane = lane - 1;
@@ -340,7 +413,21 @@ int main() {
                 // Fill up the rest of path planner after filling it with previous points, will always output 50 points
                 for (int i = 1; i <= 50-previous_path_x.size(); i++) {
                     if (too_close) {
-                        ref_vel -= .224;
+                        switch(brake_rate) {
+                            case BRAKE_RATE::LIGHT_BRAKE:
+                                ref_vel -= .056;
+                                break;
+                            case BRAKE_RATE::MEDIUM_BRAKE:
+                                ref_vel -= .112;
+                                break;
+                            case BRAKE_RATE::HARD_BRAKE:
+                                ref_vel -= .224;
+                                break;
+                            default:
+                                ref_vel -= .224;
+                                break;
+                        }
+                        // ref_vel -= .112;
                     } else if (ref_vel < 49.5) {
                         ref_vel += .224;
                     }
