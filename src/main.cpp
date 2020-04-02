@@ -205,7 +205,7 @@ int main() {
 
                                 // brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
                                 
-                                if(dist < 20) {
+                                if(dist < 25) {
                                     brake_rate = std::max(brake_rate, BRAKE_RATE::LIGHT_BRAKE);
                                 }
 
@@ -329,12 +329,22 @@ int main() {
                     // Check lane switch possibility
                     if(lane == 0) {
                         // Can only move right
-                        if(!too_close_right) {
-                            // Change to right lane
-                            target_lane = lane + 1;
-                            goStraight = false;
-                            state = LANE_STATE::TRANSITION_LANE;
-                            std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                        if(!too_close) {
+                            // Return to ideal lane only if theres no car in 60m
+                            if(right_dist > 100 && !too_close_right) {
+                                target_lane = lane + 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                            }
+                        } else {
+                            if(!too_close_right) {
+                                // Change to right lane
+                                target_lane = lane + 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                            }
                         }
 
                     } else if (lane == 1) {
@@ -372,12 +382,22 @@ int main() {
                     
                     } else if (lane == 2) {
                         // Can only go left
-                        if(!too_close_left) {
-                            // Change to left lane
-                            target_lane = lane - 1;
-                            goStraight = false;
-                            state = LANE_STATE::TRANSITION_LANE;
-                            std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                        if(!too_close) {
+                            // Return to ideal lane only if theres no car in 60m
+                            if(left_dist > 100 && !too_close_left) {
+                                target_lane = lane - 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                            }
+                        } else {
+                            if(!too_close_left) {
+                                // Change to left lane
+                                target_lane = lane - 1;
+                                goStraight = false;
+                                state = LANE_STATE::TRANSITION_LANE;
+                                std::cout << "State change: TRANSITION_LANE " << lane << " -> " << target_lane << std::endl;
+                            }
                         }
                     }
                 }
@@ -458,8 +478,8 @@ int main() {
                         }
                         // ref_vel -= .112;
                     } else if (ref_vel < 49.5) {
-                        ref_vel += .224;
-                        // ref_vel += .336;
+                        // ref_vel += .224;
+                        ref_vel += .336;
                         // ref_vel += .448;
                     }
 
