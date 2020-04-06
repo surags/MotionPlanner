@@ -4,6 +4,8 @@
 #include <math.h>
 #include <string>
 #include <vector>
+#include <iostream>
+#include "Eigen-3.3/Eigen/Dense"
 
 // for convenience
 using std::string;
@@ -152,6 +154,59 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   double y = seg_y + d*sin(perp_heading);
 
   return {x,y};
+}
+
+vector<double> calculateCoeffsJMT(double pos_i, double pos_dot_i, double pos_dot_dot_i, double pos_f, double pos_dot_f, double pos_dot_dot_f, double t) {
+  double a0;
+  double a1;
+  double a2;
+  // double a3;
+  // double a4;
+  // double a5;
+  vector<double> result;
+
+  a0 = pos_i;
+  a1 = pos_dot_i;
+  a2 = pos_dot_dot_i * 0.5;
+
+  Eigen::Matrix3d A;
+  Eigen::Vector3d x;
+  Eigen::Vector3d B;
+
+  double t_3 = t*t*t;
+  double t_4 = t*t*t*t;
+  double t_5 = t*t*t*t*t;
+
+  A << t_3, t_4, t_5,
+        3*t_3, 4*t_4, 5*t_5,
+        6*t_3, 12*t_4, 20*t_5 ;
+  
+  B << pos_f - (pos_i + pos_dot_i * t + 0.5 * t*t * pos_dot_dot_i),
+        pos_dot_f - (pos_dot_i + pos_dot_i-pos_dot_dot_i* t),
+        pos_dot_dot_f - pos_dot_dot_i;
+
+  auto x_T = A.inverse() * B;
+
+  result.push_back(a0);
+  result.push_back(a1);
+  result.push_back(a2);
+  result.push_back(x_T[0]);
+  result.push_back(x_T[1]);
+  result.push_back(x_T[2]);
+
+  std::cout << a0 << " " << a1 << " " << a2 << " " << x_T[0] << " " << x_T[1] << " " << x_T[2] << std::endl;
+  return result;
+}
+
+double evaluateJMT(vector<double> &coeffs, double t) {
+  double result = 0;
+  // std::cout << "Size: " << coeffs.size();
+  for(int i = 0; i < coeffs.size(); i++) {
+    result += coeffs[i] * pow(t, i);
+    // std::cout << result << std::endl;
+  }
+  // std::cout << "end";
+  return result;
 }
 
 #endif  // HELPERS_H

@@ -246,7 +246,7 @@ int main() {
                             }
 
                             // If the check car is within 10 metres at back, disqualify lane (blindspot check)
-                            if (check_car_s < car_s && (car_s - check_car_s) < 5) {
+                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
                                 //ref_vel = 29.5;
                                 too_close_left = true;
                             }
@@ -273,7 +273,7 @@ int main() {
                             }
 
                             // If the check car is within 10 metres at back, disqualify lane (blindspot check)
-                            if (check_car_s < car_s && (car_s - check_car_s) < 5) {
+                            if (check_car_s < car_s && (car_s - check_car_s) < 8) {
                                 too_close_right = true;
                             }
                         }
